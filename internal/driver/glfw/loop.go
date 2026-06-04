@@ -1,6 +1,8 @@
 package glfw
 
 import (
+	"image"
+	"math"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -220,10 +222,41 @@ func (d *gLDriver) repaintWindow(w *window) bool {
 	if canvas.EnsureMinSize() {
 		w.shouldExpand = true
 	}
+
+	// Snapshot the dirty object set BEFORE draining the texture queue so we
+	// can compute the pixel dirty rect from it.
+	dirtyObjs := canvas.TakeDirtySet()
+
 	freed = canvas.FreeDirtyTextures() > 0
 
 	updateGLContext(w)
-	canvas.paint(canvas.Size())
+
+	size := canvas.Size()
+	pixScale := canvas.scale * canvas.texScale
+	fbW := int(math.Round(float64(size.Width * pixScale)))
+	fbH := int(math.Round(float64(size.Height * pixScale)))
+
+	// Attempt dirty-region rendering via FBO. Fall back to full repaint when
+	// FBO is unavailable (mobile/WASM stubs return false from EnsureFBO).
+	// When the FBO was just (re)created (resize or first frame), skip the
+	// dirty rect and do a full repaint to populate the blank FBO.
+	// Also force a full repaint when SetFullDirty() was called (structural
+	// changes such as overlay add/remove, content swap, or scale reload).
+	painter := canvas.Painter()
+	fboReady, fboFresh := painter.EnsureFBO(fbW, fbH)
+	needsFull := canvas.TakeFullDirty()
+
+	if fboReady {
+		painter.BindFBO()
+		var dirtyPx image.Rectangle
+		if !fboFresh && !needsFull {
+			dirtyPx = canvas.computeDirtyRect(dirtyObjs, pixScale)
+		}
+		canvas.paintWithDirty(size, dirtyPx)
+		painter.BlitFBO()
+	} else {
+		canvas.paint(size)
+	}
 
 	view := w.viewport
 	visible := w.visible

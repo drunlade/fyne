@@ -174,6 +174,14 @@ func (c *mobileContext) BindBuffer(target uint32, buf Buffer) {
 	c.glContext.BindBuffer(gl.Enum(target), gl.Buffer(buf))
 }
 
+func (c *mobileContext) BindFramebuffer(_ uint32, _ uint32)                                         {}
+func (c *mobileContext) BlitFramebuffer(_, _, _, _, _, _, _, _ int, _, _ uint32)                    {}
+func (c *mobileContext) CheckFramebufferStatus(_ uint32) uint32                                      { return 0 }
+func (c *mobileContext) DeleteFramebuffer(_ uint32)                                                  {}
+func (c *mobileContext) FramebufferTexture2D(_, _, _ uint32, _ Texture, _ int32)                    {}
+func (c *mobileContext) GenFramebuffer() uint32                                                      { return 0 }
+func (c *mobileContext) TexSubImage2D(_ uint32, _, _, _, _, _ int, _, _ uint32, _ []uint8)          {}
+
 func (c *mobileContext) BindTexture(target uint32, texture Texture) {
 	c.glContext.BindTexture(gl.Enum(target), gl.Texture(texture))
 }

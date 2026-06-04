@@ -6,6 +6,7 @@ import (
 	"image"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/internal"
 	"fyne.io/fyne/v2/internal/driver"
 	"fyne.io/fyne/v2/theme"
@@ -19,6 +20,10 @@ type Painter interface {
 	Capture(fyne.Canvas) image.Image
 	// Clear tells our painter to prepare a fresh paint
 	Clear()
+	// ClearRegion performs a scissored clear of only the given pixel region.
+	// r is in framebuffer pixel space with Y=0 at the top; framebufferH is the
+	// total framebuffer height in pixels and is used to flip Y for GL's origin.
+	ClearRegion(r image.Rectangle, framebufferH int)
 	// Free is used to indicate that a certain canvas object is no longer needed
 	Free(fyne.CanvasObject)
 	// Paint a single fyne.CanvasObject but not its children.
@@ -31,6 +36,17 @@ type Painter interface {
 	StartClipping(fyne.Position, fyne.Size)
 	// StopClipping stops clipping paint actions.
 	StopClipping()
+	// EnsureFBO creates or resizes the persistent offscreen framebuffer object to
+	// w×h pixels. Returns (ready, fresh): ready is true when the FBO is
+	// available; fresh is true when the FBO was just (re)created and callers
+	// must do a full repaint to populate it. false ready means FBO is not
+	// supported and callers should fall back to direct rendering.
+	EnsureFBO(w, h int) (ready, fresh bool)
+	// BindFBO redirects all subsequent GL rendering to the FBO.
+	BindFBO()
+	// BlitFBO copies the FBO colour attachment to the default framebuffer so the
+	// composited image becomes visible. The FBO is unbound afterward.
+	BlitFBO()
 }
 
 // NewPainter creates a new GL based renderer for the provided canvas.
@@ -61,6 +77,13 @@ type painter struct {
 	blurSnapTexValid        bool    // whether blurSnapTex has been allocated
 	blurSnapW, blurSnapH    int     // size of blurSnapTex in pixels
 	fbHeight                int     // current framebuffer height in pixels
+
+	// Persistent offscreen FBO for dirty-region rendering.
+	fboID    uint32
+	fboTex   Texture
+	fboW     int
+	fboH     int
+	fboReady bool
 }
 
 type ProgramState struct {
@@ -206,6 +229,81 @@ func (p *painter) StartClipping(pos fyne.Position, size fyne.Size) {
 
 func (p *painter) StopClipping() {
 	p.ctx.Disable(scissorTest)
+	p.logError()
+}
+
+func (p *painter) ClearRegion(r image.Rectangle, framebufferH int) {
+	if r.Empty() {
+		return
+	}
+	// Convert from Y=0-at-top to GL's Y=0-at-bottom.
+	x := int32(r.Min.X)
+	y := int32(framebufferH - r.Max.Y)
+	w := int32(r.Dx())
+	h := int32(r.Dy())
+	p.ctx.Enable(scissorTest)
+	p.ctx.Scissor(x, y, w, h)
+	rv, gv, bv, av := theme.Color(theme.ColorNameBackground).RGBA()
+	p.ctx.ClearColor(float32(rv)/max16bit, float32(gv)/max16bit, float32(bv)/max16bit, float32(av)/max16bit)
+	p.ctx.Clear(bitColorBuffer)
+	p.ctx.Disable(scissorTest)
+	p.logError()
+}
+
+func (p *painter) EnsureFBO(w, h int) (ready, fresh bool) {
+	if p.fboReady && p.fboW == w && p.fboH == h {
+		return true, false
+	}
+	// Tear down any existing FBO.
+	if p.fboID != 0 {
+		p.ctx.BindFramebuffer(framebuffer, 0)
+		p.ctx.DeleteFramebuffer(p.fboID)
+		p.ctx.DeleteTexture(p.fboTex)
+		p.fboID = 0
+		p.fboReady = false
+	}
+	fboID := p.ctx.GenFramebuffer()
+	if fboID == 0 {
+		return false, false // FBO unsupported (mobile/WASM stubs return 0)
+	}
+	p.ctx.BindFramebuffer(framebuffer, fboID)
+
+	// Allocate colour texture.
+	fboTex := p.newTexture(canvas.ImageScaleSmooth)
+	p.ctx.ActiveTexture(texture0)
+	p.ctx.BindTexture(texture2D, fboTex)
+	p.ctx.TexImage2D(texture2D, 0, w, h, colorFormatRGBA, unsignedByte, nil)
+	p.ctx.FramebufferTexture2D(framebuffer, colorAttachment0, texture2D, fboTex, 0)
+
+	status := p.ctx.CheckFramebufferStatus(framebuffer)
+	p.ctx.BindFramebuffer(framebuffer, 0)
+	if status != framebufferComplete {
+		p.ctx.DeleteFramebuffer(fboID)
+		p.ctx.DeleteTexture(fboTex)
+		return false, false
+	}
+	p.fboID = fboID
+	p.fboTex = fboTex
+	p.fboW = w
+	p.fboH = h
+	p.fboReady = true
+	return true, true // freshly created — caller must do a full repaint
+}
+
+func (p *painter) BindFBO() {
+	if p.fboID != 0 {
+		p.ctx.BindFramebuffer(framebuffer, p.fboID)
+	}
+}
+
+func (p *painter) BlitFBO() {
+	if p.fboID == 0 {
+		return
+	}
+	p.ctx.BindFramebuffer(readFramebuffer, p.fboID)
+	p.ctx.BindFramebuffer(drawFramebuffer, 0)
+	p.ctx.BlitFramebuffer(0, 0, p.fboW, p.fboH, 0, 0, p.fboW, p.fboH, bitColorBuffer, nearest)
+	p.ctx.BindFramebuffer(framebuffer, 0)
 	p.logError()
 }
 

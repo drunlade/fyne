@@ -4,7 +4,13 @@ type context interface {
 	ActiveTexture(textureUnit uint32)
 	AttachShader(program Program, shader Shader)
 	BindBuffer(target uint32, buf Buffer)
+	BindFramebuffer(target uint32, framebuffer uint32)
 	BindTexture(target uint32, texture Texture)
+	BlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1 int, mask, filter uint32)
+	CheckFramebufferStatus(target uint32) uint32
+	DeleteFramebuffer(framebuffer uint32)
+	FramebufferTexture2D(target, attachment, texTarget uint32, texture Texture, level int32)
+	GenFramebuffer() uint32
 	BlendColor(r, g, b, a float32)
 	BlendFunc(srcFactor, destFactor uint32)
 	BufferData(target uint32, points []float32, usage uint32)
@@ -38,6 +44,7 @@ type context interface {
 	ShaderSource(shader Shader, source string)
 	TexImage2D(target uint32, level, width, height int, colorFormat, typ uint32, data []uint8)
 	TexParameteri(target, param uint32, value int32)
+	TexSubImage2D(target uint32, level, xoffset, yoffset, width, height int, colorFormat, typ uint32, data []uint8)
 	Uniform1f(uniform Uniform, v float32)
 	Uniform1fv(uniform Uniform, v []float32)
 	Uniform1i(uniform Uniform, v int32)
