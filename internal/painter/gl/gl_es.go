@@ -16,17 +16,23 @@ const (
 	bitColorBuffer        = gl.COLOR_BUFFER_BIT
 	bitDepthBuffer        = gl.DEPTH_BUFFER_BIT
 	clampToEdge           = gl.CLAMP_TO_EDGE
+	colorAttachment0      = gl.COLOR_ATTACHMENT0
 	colorFormatRGBA       = gl.RGBA
 	compileStatus         = gl.COMPILE_STATUS
 	constantAlpha         = gl.CONSTANT_ALPHA
+	drawFramebuffer       = gl.DRAW_FRAMEBUFFER
 	float                 = gl.FLOAT
+	framebuffer           = gl.FRAMEBUFFER
+	framebufferComplete   = gl.FRAMEBUFFER_COMPLETE
 	fragmentShader        = gl.FRAGMENT_SHADER
 	front                 = gl.FRONT
 	glFalse               = gl.FALSE
 	linkStatus            = gl.LINK_STATUS
+	nearest               = gl.NEAREST
 	one                   = gl.ONE
 	oneMinusConstantAlpha = gl.ONE_MINUS_CONSTANT_ALPHA
 	oneMinusSrcAlpha      = gl.ONE_MINUS_SRC_ALPHA
+	readFramebuffer       = gl.READ_FRAMEBUFFER
 	scissorTest           = gl.SCISSOR_TEST
 	srcAlpha              = gl.SRC_ALPHA
 	staticDraw            = gl.STATIC_DRAW
@@ -154,6 +160,10 @@ func (c *esContext) BindBuffer(target uint32, buf Buffer) {
 	gl.BindBuffer(target, uint32(buf))
 }
 
+func (c *esContext) BindFramebuffer(target uint32, fbo uint32) {
+	gl.BindFramebuffer(target, fbo)
+}
+
 func (c *esContext) BindTexture(target uint32, texture Texture) {
 	gl.BindTexture(target, uint32(texture))
 }
@@ -164,6 +174,29 @@ func (c *esContext) BlendColor(r, g, b, a float32) {
 
 func (c *esContext) BlendFunc(srcFactor, destFactor uint32) {
 	gl.BlendFunc(srcFactor, destFactor)
+}
+
+func (c *esContext) BlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1 int, mask, filter uint32) {
+	gl.BlitFramebuffer(int32(srcX0), int32(srcY0), int32(srcX1), int32(srcY1),
+		int32(dstX0), int32(dstY0), int32(dstX1), int32(dstY1), mask, filter)
+}
+
+func (c *esContext) CheckFramebufferStatus(target uint32) uint32 {
+	return gl.CheckFramebufferStatus(target)
+}
+
+func (c *esContext) DeleteFramebuffer(fbo uint32) {
+	gl.DeleteFramebuffers(1, &fbo)
+}
+
+func (c *esContext) FramebufferTexture2D(target, attachment, texTarget uint32, texture Texture, level int32) {
+	gl.FramebufferTexture2D(target, attachment, texTarget, uint32(texture), level)
+}
+
+func (c *esContext) GenFramebuffer() uint32 {
+	var fbo uint32
+	gl.GenFramebuffers(1, &fbo)
+	return fbo
 }
 
 func (c *esContext) BufferData(target uint32, points []float32, usage uint32) {
@@ -321,6 +354,10 @@ func (c *esContext) TexImage2D(target uint32, level, width, height int, colorFor
 
 func (c *esContext) TexParameteri(target, param uint32, value int32) {
 	gl.TexParameteri(target, param, value)
+}
+
+func (c *esContext) TexSubImage2D(target uint32, level, xoffset, yoffset, width, height int, colorFormat, typ uint32, data []uint8) {
+	gl.TexSubImage2D(target, int32(level), int32(xoffset), int32(yoffset), int32(width), int32(height), colorFormat, typ, gl.Ptr(data))
 }
 
 func (c *esContext) Uniform1f(uniform Uniform, v float32) {

@@ -3,6 +3,8 @@ package common
 import (
 	"image/color"
 	"reflect"
+	"sync"
+	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -48,6 +50,18 @@ type Canvas struct {
 	// arbitrary number of fyne.CanvasObject for the rendering.
 	refreshQueue deduplicatedObjectQueue
 	dirty        bool
+
+	// dirtyMu guards dirtySet. Refresh() may be called from any goroutine;
+	// TakeDirtySet() is called from the GL thread.
+	dirtyMu  sync.Mutex
+	dirtySet map[fyne.CanvasObject]struct{}
+
+	// fullDirty is set by structural changes (overlay add/remove, content swap,
+	// scale reload) that require a full-canvas repaint, not just a dirty-rect
+	// repaint. Unlike dirtySet (which tracks individual refreshed objects),
+	// fullDirty signals that the FBO's preserved content is no longer valid for
+	// the entire viewport — callers must ignore dirtySet and repaint everything.
+	fullDirty atomic.Bool
 
 	mWindowHeadTree, contentTree, menuTree *renderCacheTree
 }
@@ -279,7 +293,31 @@ func (c *Canvas) Painter() gl.Painter {
 // Refresh refreshes a canvas object.
 func (c *Canvas) Refresh(obj fyne.CanvasObject) {
 	c.refreshQueue.In(obj)
-	async.EnsureMain(c.SetDirty)
+	c.dirtyMu.Lock()
+	if c.dirtySet == nil {
+		c.dirtySet = make(map[fyne.CanvasObject]struct{})
+	}
+	c.dirtySet[obj] = struct{}{}
+	c.dirtyMu.Unlock()
+	// A hidden object is not walked by WalkVisibleObjectTree, so its area will
+	// be cleared by ClearRegion but not repainted by the scissored walk. Force a
+	// full-canvas repaint so the content behind the now-hidden object is restored.
+	if !obj.Visible() {
+		async.EnsureMain(c.SetFullDirty)
+	} else {
+		async.EnsureMain(c.SetDirty)
+	}
+}
+
+// TakeDirtySet atomically returns and clears the set of objects that have
+// called Refresh() since the previous call to TakeDirtySet (or since startup).
+// The caller owns the returned map. Safe to call only from the GL thread.
+func (c *Canvas) TakeDirtySet() map[fyne.CanvasObject]struct{} {
+	c.dirtyMu.Lock()
+	s := c.dirtySet
+	c.dirtySet = nil
+	c.dirtyMu.Unlock()
+	return s
 }
 
 // RemoveShortcut removes a shortcut from the canvas.
@@ -314,6 +352,21 @@ func (c *Canvas) CheckDirtyAndClear() bool {
 // SetDirty sets canvas dirty flag atomically.
 func (c *Canvas) SetDirty() {
 	c.dirty = true
+}
+
+// SetFullDirty marks the canvas as needing a full repaint on the next frame.
+// Call this for structural changes (overlay add/remove, content swap, scale
+// reload) where the FBO's preserved pixels are no longer valid canvas-wide.
+func (c *Canvas) SetFullDirty() {
+	c.dirty = true
+	c.fullDirty.Store(true)
+}
+
+// TakeFullDirty returns true if SetFullDirty() was called since the last call
+// to TakeFullDirty(), and atomically clears the flag. Safe to call only from
+// the GL thread (same as TakeDirtySet).
+func (c *Canvas) TakeFullDirty() bool {
+	return c.fullDirty.Swap(false)
 }
 
 // SetMenuTreeAndFocusMgr sets menu tree and focus manager.

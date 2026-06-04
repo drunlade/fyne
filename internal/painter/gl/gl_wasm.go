@@ -144,6 +144,14 @@ func (c *xjsContext) BindBuffer(target uint32, buf Buffer) {
 	gl.BindBuffer(gl.Enum(target), gl.Buffer(buf))
 }
 
+func (c *xjsContext) BindFramebuffer(_ uint32, _ uint32)                                        {}
+func (c *xjsContext) BlitFramebuffer(_, _, _, _, _, _, _, _ int, _, _ uint32)                   {}
+func (c *xjsContext) CheckFramebufferStatus(_ uint32) uint32                                     { return 0 }
+func (c *xjsContext) DeleteFramebuffer(_ uint32)                                                 {}
+func (c *xjsContext) FramebufferTexture2D(_, _, _ uint32, _ Texture, _ int32)                   {}
+func (c *xjsContext) GenFramebuffer() uint32                                                     { return 0 }
+func (c *xjsContext) TexSubImage2D(_ uint32, _, _, _, _, _ int, _, _ uint32, _ []uint8)         {}
+
 func (c *xjsContext) BindTexture(target uint32, texture Texture) {
 	gl.BindTexture(gl.Enum(target), gl.Texture(texture))
 }

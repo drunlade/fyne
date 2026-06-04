@@ -23,6 +23,12 @@ type Raster struct {
 	// Specify the type of scaling interpolation applied to the raster if it is not full-size
 	// Since: 1.4.1
 	ScaleMode ImageScale
+
+	// DirtyReporter, when non-nil, is queried after each Generator invocation to
+	// discover the pixel bounds of content that actually changed. Fyne's GL renderer
+	// uses this to narrow the scissor rect and skip draw calls for widgets outside
+	// the changed region.
+	DirtyReporter DirtyRegionReporter
 }
 
 // Alpha is a convenience function that returns the alpha value for a raster
