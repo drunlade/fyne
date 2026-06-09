@@ -1,6 +1,7 @@
 package glfw
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"runtime"
@@ -156,7 +157,14 @@ func (d *gLDriver) runGL() {
 			funcQueue.Close()
 			return
 		case f := <-funcQueue.Out():
-			f.f()
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fyne.LogError(fmt.Sprintf("panic in queued main-thread function: %v", r), nil)
+					}
+				}()
+				f.f()
+			}()
 			if f.done != nil {
 				f.done <- struct{}{}
 			}
