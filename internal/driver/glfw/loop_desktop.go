@@ -16,6 +16,7 @@ func (d *gLDriver) initGLFW() {
 	}
 
 	initCursors()
+	hideGLFWHelperWindow()
 }
 
 func (d *gLDriver) pollEvents() {
