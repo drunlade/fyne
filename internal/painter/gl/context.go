@@ -29,6 +29,7 @@ type context interface {
 	DrawArrays(mode uint32, first, count int)
 	Enable(capability uint32)
 	EnableVertexAttribArray(attribute Attribute)
+	Finish()
 	GetAttribLocation(program Program, name string) Attribute
 	GetError() uint32
 	GetProgrami(program Program, param uint32) int

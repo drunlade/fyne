@@ -264,6 +264,13 @@ func (c *coreContext) Enable(capability uint32) {
 	gl.Enable(capability)
 }
 
+// Finish blocks until all previously issued GL commands have completed. Used to
+// guarantee no in-flight present/blit still references an FBO texture before it
+// is deleted on resize (see painter.EnsureFBO).
+func (c *coreContext) Finish() {
+	gl.Finish()
+}
+
 func (c *coreContext) EnableVertexAttribArray(attribute Attribute) {
 	gl.EnableVertexAttribArray(uint32(attribute))
 }

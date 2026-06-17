@@ -256,6 +256,10 @@ func (c *mobileContext) Enable(capability uint32) {
 	c.glContext.Enable(gl.Enum(capability))
 }
 
+// Finish is a no-op on mobile: the FBO dirty-region path (the only caller) is
+// inactive here because EnsureFBO returns false on this backend.
+func (c *mobileContext) Finish() {}
+
 func (c *mobileContext) EnableVertexAttribArray(attribute Attribute) {
 	c.glContext.EnableVertexAttribArray(gl.Attrib(attribute))
 }

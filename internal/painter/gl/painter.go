@@ -234,6 +234,15 @@ func (p *painter) EnsureFBO(w, h int) (ready, fresh bool) {
 	}
 	// Tear down any existing FBO.
 	if p.fboID != 0 {
+		// Block until the GPU has finished with the previous FBO before deleting
+		// it. The prior frame issued BlitFBO (reading p.fboTex) followed by
+		// SwapBuffers, and those commands may still be in flight in the driver's
+		// present pipeline. Deleting the backing texture while the driver still
+		// references it is a use-after-free that surfaces as an access violation
+		// inside the GL driver's present path on resize (the only time this
+		// teardown runs). glFinish guarantees the texture is no longer in use.
+		// This sync only happens on a size change, never on steady-state frames.
+		p.ctx.Finish()
 		p.ctx.BindFramebuffer(framebuffer, 0)
 		p.ctx.DeleteFramebuffer(p.fboID)
 		p.ctx.DeleteTexture(p.fboTex)

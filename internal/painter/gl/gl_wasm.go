@@ -225,6 +225,10 @@ func (c *xjsContext) Enable(capability uint32) {
 	gl.Enable(gl.Enum(capability))
 }
 
+// Finish is a no-op on WASM: the FBO dirty-region path (the only caller) is
+// inactive here because EnsureFBO returns false on this backend.
+func (c *xjsContext) Finish() {}
+
 func (c *xjsContext) EnableVertexAttribArray(attribute Attribute) {
 	gl.EnableVertexAttribArray(gl.Attrib(attribute))
 }
