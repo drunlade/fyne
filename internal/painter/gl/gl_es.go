@@ -3,6 +3,7 @@
 package gl
 
 import (
+	"log"
 	"strings"
 	"unsafe"
 
@@ -76,6 +77,12 @@ func (p *painter) Init() {
 		fyne.LogError("failed to initialise OpenGL", err)
 		return
 	}
+
+	// Log the live GL backend once the context is current — see gl_core.go.
+	log.Printf("[GL] vendor=%q renderer=%q version=%q\n",
+		gl.GoStr(gl.GetString(gl.VENDOR)),
+		gl.GoStr(gl.GetString(gl.RENDERER)),
+		gl.GoStr(gl.GetString(gl.VERSION)))
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Enable(gl.BLEND)

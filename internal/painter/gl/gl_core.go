@@ -3,6 +3,7 @@
 package gl
 
 import (
+	"log"
 	"strings"
 	"unsafe"
 
@@ -76,6 +77,16 @@ func (p *painter) Init() {
 		fyne.LogError("failed to initialise OpenGL", err)
 		return
 	}
+
+	// Log the live GL backend once the context is current. This is the only
+	// reliable point to learn whether we're on a hardware ICD, llvmpipe, or a
+	// D3D12-backed Mesa device — invaluable for triaging rendering/crash reports.
+	// Unconditional (not debug-gated) so it lands in production logs; the host
+	// app captures stderr to a log file.
+	log.Printf("[GL] vendor=%q renderer=%q version=%q\n",
+		gl.GoStr(gl.GetString(gl.VENDOR)),
+		gl.GoStr(gl.GetString(gl.RENDERER)),
+		gl.GoStr(gl.GetString(gl.VERSION)))
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Enable(gl.BLEND)
