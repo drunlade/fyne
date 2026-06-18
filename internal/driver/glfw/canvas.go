@@ -409,6 +409,48 @@ func (c *glCanvas) computeDirtyRect(dirtyObjs map[fyne.CanvasObject]struct{}, pi
 	return dirty
 }
 
+// healDirtyRasterSpill guards against a scissor race on dirty-region rasters (the
+// terminal grid). The FBO dirty rect is built from a DirtyPixelBounds scan, but a
+// raster's content can be mutated (PTY output) between that scan and the actual
+// render in the paint walk, so the render may touch pixels outside the scissor.
+// Those pixels are clipped out of the FBO yet marked clean by the raster, so they
+// would stay stale until something forces a full repaint. When a refreshed raster
+// reports it rendered outside the scissor this frame, mark the canvas fully dirty
+// so the next frame repaints the spilled region (the texture already holds the
+// correct pixels — only the FBO copy was clipped). Costs one full repaint, and
+// only when the race actually fires.
+func (c *glCanvas) healDirtyRasterSpill(dirtyObjs map[fyne.CanvasObject]struct{}, dirtyPx image.Rectangle, pixScale float32) {
+	if len(dirtyObjs) == 0 || dirtyPx.Empty() {
+		return
+	}
+	c.objPosMu.RLock()
+	defer c.objPosMu.RUnlock()
+	for obj := range dirtyObjs {
+		rast, ok := obj.(*canvas.Raster)
+		if !ok || rast.DirtyReporter == nil {
+			continue
+		}
+		reporter, ok := rast.DirtyReporter.(interface{ LastDirtyBounds() image.Rectangle })
+		if !ok {
+			continue
+		}
+		rendered := reporter.LastDirtyBounds()
+		if rendered.Empty() {
+			continue
+		}
+		entry, found := c.objPosCache[obj]
+		if !found {
+			continue
+		}
+		// Mirror computeDirtyRect's raster offset so the spaces match exactly.
+		off := image.Pt(int(entry.absPos.X*pixScale), int(entry.absPos.Y*pixScale))
+		if !rendered.Add(off).In(dirtyPx) {
+			c.SetFullDirty()
+			return
+		}
+	}
+}
+
 func (c *glCanvas) setContent(content fyne.CanvasObject) {
 	c.content = content
 	c.SetContentTreeAndFocusMgr(content)

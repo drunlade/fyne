@@ -260,6 +260,12 @@ func (d *gLDriver) repaintWindow(w *window) bool {
 			dirtyPx = canvas.computeDirtyRect(dirtyObjs, pixScale)
 		}
 		canvas.paintWithDirty(size, dirtyPx)
+		// If a raster rendered outside the scissor this frame (content mutated
+		// between the dirty scan and the render), the spilled rows were clipped
+		// from the FBO; force a full repaint next frame to restore them.
+		if !dirtyPx.Empty() {
+			canvas.healDirtyRasterSpill(dirtyObjs, dirtyPx, pixScale)
+		}
 		painter.BlitFBO()
 	} else {
 		canvas.paint(size)
