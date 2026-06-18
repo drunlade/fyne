@@ -14,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/internal/cache"
 	"fyne.io/fyne/v2/internal/driver/common"
 	"fyne.io/fyne/v2/internal/painter"
-	"fyne.io/fyne/v2/internal/scale"
 )
 
 type funcData struct {
@@ -288,10 +287,18 @@ func updateGLContext(w *window) {
 	canvas := w.canvas
 	size := canvas.Size()
 
-	// w.width and w.height are not correct if we are maximised, so figure from canvas
-	winWidth := float32(scale.ToScreenCoordinate(canvas, size.Width)) * canvas.texScale
-	winHeight := float32(scale.ToScreenCoordinate(canvas, size.Height)) * canvas.texScale
+	// Derive the output (viewport) size with the SAME rounding the FBO uses
+	// (math.Round of size*scale*texScale, see the paint path and
+	// glCanvas.paintWithDirty). Using a different rounding here (e.g. Ceil on
+	// the logical size before applying texScale) lets the viewport disagree with
+	// the FBO by up to texScale pixels, so the scene renders at a slightly wrong
+	// scale inside the FBO and the blit lands offset — most visible under
+	// software GL. w.width/w.height are not reliable when maximised, so figure
+	// from the canvas.
+	pixScale := canvas.scale * canvas.texScale
+	winWidth := int(math.Round(float64(size.Width * pixScale)))
+	winHeight := int(math.Round(float64(size.Height * pixScale)))
 
 	canvas.Painter().SetFrameBufferScale(canvas.texScale)
-	canvas.Painter().SetOutputSize(int(winWidth), int(winHeight))
+	canvas.Painter().SetOutputSize(winWidth, winHeight)
 }

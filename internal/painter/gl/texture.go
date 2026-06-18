@@ -22,6 +22,16 @@ var noTexture = Texture(cache.NoTexture)
 type Texture cache.TextureType
 
 func (p *painter) freeTexture(obj fyne.CanvasObject) {
+	// The persistent dirty-region raster texture is owned by the painter and
+	// reused across refreshes (see newGlRasterTexture). On a refresh, drop only
+	// its cache entry so the next paint re-runs the creator (which performs the
+	// row sub-update) — but keep the GL texture alive rather than deleting and
+	// re-allocating a full-window buffer every keystroke.
+	if p.rasterTexValid && obj == p.rasterObj {
+		cache.DeleteTexture(obj)
+		return
+	}
+
 	texture, ok := cache.GetTexture(obj)
 	if !ok {
 		return
@@ -155,10 +165,82 @@ func (p *painter) newGlRadialGradientTexture(obj fyne.CanvasObject) Texture {
 func (p *painter) newGlRasterTexture(obj fyne.CanvasObject) Texture {
 	rast := obj.(*canvas.Raster)
 
-	width := p.textureScale(rast.Size().Width)
-	height := p.textureScale(rast.Size().Height)
+	reqW := int(p.textureScale(rast.Size().Width))
+	reqH := int(p.textureScale(rast.Size().Height))
 
-	return p.imgToTexture(rast.Generator(int(width), int(height)), rast.ScaleMode)
+	// Fast path for a raster that reports its dirty pixel bounds (the terminal
+	// grid): keep one persistent texture and re-upload only the changed rows.
+	// DirtyPixelBounds is a read-only pre-scan of the cells about to change, so
+	// it must be read BEFORE Generator runs (Generator updates the cell snapshot,
+	// after which the scan reports nothing dirty).
+	if rast.DirtyReporter != nil && p.rasterTexValid && p.rasterObj == obj {
+		dirty := rast.DirtyReporter.DirtyPixelBounds()
+		img := rast.Generator(reqW, reqH)
+		rgba, ok := img.(*image.RGBA)
+		// Only safe when the generated buffer matches the requested size (i.e.
+		// not stretch mode, where dirty bounds are in widget space rather than
+		// the render-buffer space the texture lives in) and matches the existing
+		// persistent texture.
+		if ok && len(rgba.Pix) > 0 &&
+			rgba.Bounds().Dx() == reqW && rgba.Bounds().Dy() == reqH &&
+			p.rasterImgW == reqW && p.rasterImgH == reqH {
+			p.subUpdateRasterTexture(rgba, dirty)
+			return p.rasterTex
+		}
+		// Fell through (size changed / stretch / non-RGBA): rebuild below.
+		return p.adoptRasterTexture(obj, p.imgToTexture(img, rast.ScaleMode), reqW, reqH)
+	}
+
+	img := rast.Generator(reqW, reqH)
+	if rast.DirtyReporter != nil {
+		if rgba, ok := img.(*image.RGBA); ok && len(rgba.Pix) > 0 &&
+			rgba.Bounds().Dx() == reqW && rgba.Bounds().Dy() == reqH {
+			return p.adoptRasterTexture(obj, p.imgToTexture(rgba, rast.ScaleMode), reqW, reqH)
+		}
+	}
+	return p.imgToTexture(img, rast.ScaleMode)
+}
+
+// adoptRasterTexture records tex as the persistent dirty-region raster texture,
+// deleting any previous one (raster swapped or resized).
+func (p *painter) adoptRasterTexture(obj fyne.CanvasObject, tex Texture, w, h int) Texture {
+	if p.rasterTexValid && p.rasterTex != tex {
+		p.ctx.DeleteTexture(p.rasterTex)
+		p.logError()
+	}
+	p.rasterObj = obj
+	p.rasterTex = tex
+	p.rasterTexValid = true
+	p.rasterImgW = w
+	p.rasterImgH = h
+	return tex
+}
+
+// subUpdateRasterTexture uploads only the dirty rows of img into the persistent
+// raster texture. The dirty rect is reduced to a full-width row band so the
+// source rows are contiguous in img.Pix (no GL_UNPACK_ROW_LENGTH needed, which
+// keeps this valid on GL ES too). Row order matches the original full upload
+// (image row r -> texture row r), so no vertical flip is required.
+func (p *painter) subUpdateRasterTexture(img *image.RGBA, dirty image.Rectangle) {
+	b := img.Bounds()
+	y0 := dirty.Min.Y
+	y1 := dirty.Max.Y
+	if y0 < 0 {
+		y0 = 0
+	}
+	if y1 > b.Dy() {
+		y1 = b.Dy()
+	}
+	if y1 <= y0 {
+		return // nothing changed this frame
+	}
+
+	p.ctx.ActiveTexture(texture0)
+	p.ctx.BindTexture(texture2D, p.rasterTex)
+	stride := img.Stride
+	p.ctx.TexSubImage2D(texture2D, 0, 0, y0, b.Dx(), y1-y0,
+		colorFormatRGBA, unsignedByte, img.Pix[y0*stride:y1*stride])
+	p.logError()
 }
 
 func (p *painter) newGlTextTexture(obj fyne.CanvasObject) Texture {

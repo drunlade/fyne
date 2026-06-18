@@ -5,7 +5,9 @@ import (
 	"image/color"
 	_ "image/png" // for the icon
 	"math"
+	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -128,6 +130,20 @@ func (w *window) calculatedScale() float32 {
 }
 
 func (w *window) detectTextureScale() float32 {
+	// When DPI detection is disabled the caller wants no scaling at all, so the
+	// texture (framebuffer/window) scale must be locked to 1 just like the
+	// logical scale is in detectScale(). Otherwise a machine that reports a
+	// framebuffer size differing from its window size injects a texScale != 1
+	// that the render path honours (pixScale, FBO size, viewport) but input
+	// hit-testing does not (scale.ToFyneCoordinate uses scale only) — producing
+	// content that is offset from where the mouse lands. The literal env key is
+	// duplicated from window_desktop.go's disableDPIDetectionEnvKey because this
+	// file is shared with the wasm build, where that const does not exist.
+	env := os.Getenv("FYNE_DISABLE_DPI_DETECTION")
+	if strings.EqualFold(env, "true") || strings.EqualFold(env, "t") || env == "1" {
+		return 1
+	}
+
 	view := w.view()
 	winWidth, _ := view.GetSize()
 	texWidth, _ := view.GetFramebufferSize()

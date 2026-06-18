@@ -76,7 +76,8 @@ type painter struct {
 	blurSnapTex             Texture // cached texture for GPU-side blur snapshot
 	blurSnapTexValid        bool    // whether blurSnapTex has been allocated
 	blurSnapW, blurSnapH    int     // size of blurSnapTex in pixels
-	fbHeight                int     // current framebuffer height in pixels
+	fbWidth                 int     // current framebuffer (default drawable) width in pixels
+	fbHeight                int     // current framebuffer (default drawable) height in pixels
 
 	// Persistent offscreen FBO for dirty-region rendering.
 	fboID    uint32
@@ -84,6 +85,17 @@ type painter struct {
 	fboW     int
 	fboH     int
 	fboReady bool
+
+	// Persistent texture for a dirty-region raster (the terminal grid). Reused
+	// across refreshes so a per-keystroke update re-uploads only the changed
+	// rows via TexSubImage2D, instead of freeing and re-uploading the whole
+	// image. Under software GL (Mesa) the full path frees and re-memcpys a
+	// full-window system-RAM buffer on every keystroke; this avoids that churn.
+	rasterObj      fyne.CanvasObject
+	rasterTex      Texture
+	rasterTexValid bool
+	rasterImgW     int
+	rasterImgH     int
 }
 
 // Declare conformity to Painter interface
@@ -118,6 +130,7 @@ func (p *painter) SetFrameBufferScale(scale float32) {
 
 func (p *painter) SetOutputSize(width, height int) {
 	p.ctx.Viewport(0, 0, width, height)
+	p.fbWidth = width
 	p.fbHeight = height
 	p.logError()
 }
@@ -289,7 +302,16 @@ func (p *painter) BlitFBO() {
 	}
 	p.ctx.BindFramebuffer(readFramebuffer, p.fboID)
 	p.ctx.BindFramebuffer(drawFramebuffer, 0)
-	p.ctx.BlitFramebuffer(0, 0, p.fboW, p.fboH, 0, 0, p.fboW, p.fboH, bitColorBuffer, nearest)
+	// Source is the full FBO; destination is the real default-framebuffer
+	// drawable (the viewport set by SetOutputSize). With the size pipeline
+	// unified these match exactly, but targeting the stored output size keeps
+	// the copy correct even if FBO and drawable ever differ by a pixel, instead
+	// of assuming the default framebuffer is exactly fboW x fboH.
+	dstW, dstH := p.fbWidth, p.fbHeight
+	if dstW == 0 || dstH == 0 { // SetOutputSize not called yet — fall back to FBO size
+		dstW, dstH = p.fboW, p.fboH
+	}
+	p.ctx.BlitFramebuffer(0, 0, p.fboW, p.fboH, 0, 0, dstW, dstH, bitColorBuffer, nearest)
 	p.ctx.BindFramebuffer(framebuffer, 0)
 	p.logError()
 }

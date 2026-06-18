@@ -7,6 +7,7 @@ import (
 	"context"
 	"image"
 	_ "image/png" // for the icon
+	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -866,6 +867,19 @@ func (w *window) create() {
 	w.canvas.detectedScale = w.detectScale()
 	w.canvas.scale = w.calculatedScale()
 	w.canvas.texScale = w.detectTextureScale()
+	// Diagnostic: the scale pipeline is fixed here at creation on non-darwin
+	// (processFrameSized early-returns off darwin, so texScale never changes for
+	// the session). Logging the raw inputs lets us confirm on a machine we can't
+	// reproduce whether GetFramebufferSize != GetSize injected a texScale != 1
+	// (the render/input offset) and that the DPI-disable guard pinned it to 1.
+	// Goes to stderr, which the app captures to std-<pid>.log on Windows.
+	if v := w.view(); v != nil {
+		winW, winH := v.GetSize()
+		fbW, fbH := v.GetFramebufferSize()
+		log.Printf("fyne scale diagnostics: GetSize=%dx%d GetFramebufferSize=%dx%d scale=%.3f detectedScale=%.3f texScale=%.3f FYNE_SCALE=%q FYNE_DISABLE_DPI_DETECTION=%q",
+			winW, winH, fbW, fbH, w.canvas.scale, w.canvas.detectedScale, w.canvas.texScale,
+			os.Getenv("FYNE_SCALE"), os.Getenv(disableDPIDetectionEnvKey))
+	}
 	// update window size now we have scaled detected
 	w.fitContent()
 
